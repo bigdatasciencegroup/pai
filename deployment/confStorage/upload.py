@@ -26,6 +26,7 @@ import logging
 import logging.config
 
 from . import conf_storage_util
+from ..paiLibrary.common import file_handler, directory_handler
 
 
 package_directory_kubeinstall = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +51,7 @@ class upload_configuration:
 
         cluster_id = conf_storage_util.get_cluster_id(self.KUBE_CONFIG_DEFAULT_LOCATION)
 
-        if cluster_id == None:
+        if cluster_id is None:
             self.logger.warning("No cluster_id found in your cluster.")
             user_input = raw_input("Please input the cluster-id for your cluster: ")
             conf_storage_util.update_cluster_id(self.KUBE_CONFIG_DEFAULT_LOCATION, user_input)
@@ -69,13 +70,15 @@ class upload_configuration:
     def upload_latest_configuration(self):
 
         conf_dict = dict()
-        conf_dict["cluster-configuration.yaml"] = conf_storage_util.read_file_from_path("{0}/cluster-configuration.yaml".format(self.config_path))
         conf_dict["k8s-role-definition.yaml"] = conf_storage_util.read_file_from_path("{0}/k8s-role-definition.yaml".format(self.config_path))
         conf_dict["kubernetes-configuration.yaml"] = conf_storage_util.read_file_from_path(
             "{0}/kubernetes-configuration.yaml".format(self.config_path))
+        conf_dict["layout.yaml"] = conf_storage_util.read_file_from_path("{0}/layout.yaml".format(self.config_path))
         conf_dict["services-configuration.yaml"] = conf_storage_util.read_file_from_path(
             "{0}/services-configuration.yaml".format(self.config_path))
-
+        if file_handler.file_exist_or_not("{0}/services-configuration.yaml.old".format(self.config_path)) == True:
+            conf_dict["services-configuration.yaml.old"] = conf_storage_util.read_file_from_path(
+                "{0}/services-configuration.yaml.old".format(self.config_path))
         conf_storage_util.update_conf_configmap(self.KUBE_CONFIG_DEFAULT_LOCATION, conf_dict)
 
 

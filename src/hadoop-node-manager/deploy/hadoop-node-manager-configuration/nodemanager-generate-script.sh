@@ -34,24 +34,24 @@ echo "The ip-address of this machine is: $host_ip_address"
 
 echo "$host_ip_address  $host_ip_address" >> /etc/hosts
 
-
 cp  /hadoop-configuration/core-site.xml $HADOOP_CONF_DIR/core-site.xml
 cp  /hadoop-configuration/mapred-site.xml $HADOOP_CONF_DIR/mapred-site.xml
 cp  /hadoop-configuration/yarn-site.xml $HADOOP_CONF_DIR/yarn-site.xml
 cp  /hadoop-configuration/hadoop-env.sh $HADOOP_CONF_DIR/hadoop-env.sh
 cp  /hadoop-configuration/yarn-env.sh $HADOOP_CONF_DIR/yarn-env.sh
+# Share hdfs configuration to user's job
+cp  /hadoop-configuration/hdfs-site.xml $HADOOP_CONF_DIR/hdfs-site.xml
 
-HOST_NAME=`hostname`
-/usr/local/host-configure.py -c /host-configuration/host-configuration.yaml -f $HADOOP_CONF_DIR/yarn-site.xml  -n $HOST_NAME
-
+sed  -i "s/{POD_IP}/${POD_IP}/g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s/{RESOURCEMANAGER_ADDRESS}/${RESOURCEMANAGER_ADDRESS}/g" $HADOOP_CONF_DIR/yarn-site.xml
-sed  -i "s/{ZOOKEEPER_ADDRESS}/${ZOOKEEPER_ADDRESS}/g" $HADOOP_CONF_DIR/yarn-site.xml
+sed  -i "s/{ZOOKEEPER_QUORUM}/${ZOOKEEPER_QUORUM}/g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s/{HDFS_ADDRESS}/${HDFS_ADDRESS}/g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s/{LOGSERVER_ADDRESS}/${LOGSERVER_ADDRESS}/g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s/{TIMELINE_SERVER_ADDRESS}/${TIMELINE_SERVER_ADDRESS}/g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s#{HOST_YARN_NODEMANAGER_STORAGE}#${HOST_YARN_NODEMANAGER_STORAGE}#g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s#{HOST_HADOOP_TMP_STORAGE}#${HOST_HADOOP_TMP_STORAGE}#g" $HADOOP_CONF_DIR/yarn-site.xml
 sed  -i "s#{CURRENT_IMAGE_NAME}#${CURRENT_IMAGE_NAME}#g" $HADOOP_CONF_DIR/yarn-site.xml
+sed  -i "s/{POD_IP}/${POD_IP}/g" $HADOOP_CONF_DIR/yarn-site.xml
 
 sed  -i "s/{HDFS_ADDRESS}/${HDFS_ADDRESS}/g" $HADOOP_CONF_DIR/core-site.xml
 
@@ -62,8 +62,8 @@ mem_total=`cat /proc/meminfo | grep "MemTotal" | awk '{print $2}'`
 # memory size to nodemanager is (mem_total - mem_reserved)
 if [ $(grep 'ip:' /host-configuration/host-configuration.yaml|wc -l) -gt 1 ]
 then
-    echo "Node role is 'Worker'. Reserve 12G for os and k8s."
-    let mem_reserved=12*1024
+    echo "Node role is 'Worker'. Reserve 16G for os and k8s."
+    let mem_reserved=16*1024
 else
     echo "Node role is 'Master & Worker'. Reserve 40G for os and k8s."
     let mem_reserved=40*1024

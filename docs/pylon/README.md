@@ -44,7 +44,7 @@ Pylon starts a [nginx](http://nginx.org/) instance in a Docker container to prov
 
 ### For deploying as a standalone service (debugging)
 
-If the nginx in Pylon is to be deployed as a stand alone service (usually for debugging purpose), the following envirionment variables must be set in advance:
+If the nginx in Pylon is to be deployed as a stand alone service (usually for debugging purpose), the following environment variables must be set in advance:
   - `REST_SERVER_URI`: String. The root url of the REST server.
   - `K8S_API_SERVER_URI`: String. The root url of Kubernetes's API server.
   - `WEBHDFS_URI`: String. The root url of WebHDFS's API server.
@@ -58,7 +58,7 @@ And before starting nginx, the `nginx.conf` file must be generated using `python
 
 ### For deploying with PAI
 
-The deployment of Pylon goes with the bootstrapping process of the whole PAI cluster, which is described in detail in [Tutorial: Booting up the cluster](../pai-management/doc/cluster-bootup.md). To configure Pylon, change the following field(s) in the `pylon` section in [services-configuration.yaml](../../examples/cluster-configuration/services-configuration.yaml) file:
+The deployment of Pylon goes with the bootstrapping process of the whole PAI cluster, which is described in detail in [Tutorial: Booting up the cluster](../pai-management/doc/distributed-deploy.md). To configure Pylon, change the following field(s) in the `pylon` section in [services-configuration.yaml](../../examples/cluster-configuration/services-configuration.yaml) file:
 
 * `server-port`: Integer. The network port to access Pylon. The default value is 80.
 

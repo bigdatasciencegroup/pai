@@ -37,11 +37,9 @@ from ..paiLibrary.common import kubernetes_handler
 logger = logging.getLogger(__name__)
 
 
-
 def get_subdirectory_list(path):
 
     return next(os.walk(path))[1]
-
 
 
 def create_path(path):
@@ -57,14 +55,10 @@ def create_path(path):
                 sys.exit(1)
 
 
-
 def read_file_from_path(file_path):
-
     with open(file_path, "r") as fin:
         file_data = fin.read().decode('utf-8')
-
     return file_data
-
 
 
 def write_generated_file(generated_file, file_path):
@@ -73,16 +67,14 @@ def write_generated_file(generated_file, file_path):
         fout.write(generated_file.encode('utf-8'))
 
 
-
 def get_cluster_id(PAI_KUBE_CONFIG_DEFAULT_LOCATION):
 
     resp = kubernetes_handler.get_configmap(PAI_KUBE_CONFIG_DEFAULT_LOCATION, "pai-cluster-id")
-    if resp == None:
+    if resp is None:
         return None
 
     # return a string
     return resp["data"]["cluster-id"]
-
 
 
 def update_cluster_id(PAI_KUBE_CONFIG_DEFAULT_LOCATION, cluster_id):
@@ -92,16 +84,14 @@ def update_cluster_id(PAI_KUBE_CONFIG_DEFAULT_LOCATION, cluster_id):
     kubernetes_handler.update_configmap(PAI_KUBE_CONFIG_DEFAULT_LOCATION, "pai-cluster-id", data_dict)
 
 
-
 def get_conf_configmap(PAI_KUBE_CONFIG_DEFAULT_LOCATION):
 
     resp = kubernetes_handler.get_configmap(PAI_KUBE_CONFIG_DEFAULT_LOCATION, "pai-configuration")
-    if resp == None:
+    if resp is None:
         return None
 
     # return a dict
     return resp["data"]
-
 
 
 def update_conf_configmap(PAI_KUBE_CONFIG_DEFAULT_LOCATION, conf_data_dict):

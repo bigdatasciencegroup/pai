@@ -35,7 +35,7 @@ class BuildCenter:
 
         self.build_config = build_config
 
-        self.process_list = [service.lower() for service in process_list] if not process_list == None else None
+        self.process_list = [service.lower() for service in process_list] if process_list is not None else None
 
         # Initialize docker_cli instance
         self.docker_cli = build_utility.DockerClient(
@@ -97,7 +97,7 @@ class BuildCenter:
         self.construct_graph()
 
         # Check all process_list items are valid or not
-        if not self.process_list == None:
+        if self.process_list is not None:
             for item in self.process_list:
                 if item not in self.graph.services:
                     self.logger.error("service {0} is invalid".format(item))
@@ -122,7 +122,8 @@ class BuildCenter:
                     build_worker.build_single_component(self.graph.services[item])
             self.logger.info("Build all components succeed")
 
-        except:
+        except Exception as e:
+            self.logger.error(str(e))
             self.logger.error("Build all components failed")
             sys.exit(1)
 
@@ -139,7 +140,7 @@ class BuildCenter:
         # Find services and map dockfile to services
         self.construct_graph()
 
-        if not self.process_list == None:
+        if self.process_list is not None:
             for image in self.process_list:
                 if image not in self.graph.image_to_service:
                     self.logger.error("{0} not in image list".format(image))
@@ -156,7 +157,3 @@ class BuildCenter:
                 self.docker_cli.docker_image_tag(image,self.build_config['dockerRegistryInfo']['dockerTag'])
                 self.docker_cli.docker_image_push(image,self.build_config['dockerRegistryInfo']['dockerTag'])
                 self.logger.info("Push image:{0} successfully".format(image))
-
-
-
-

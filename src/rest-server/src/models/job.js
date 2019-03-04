@@ -28,6 +28,8 @@ const dockerContainerScriptTemplate = require('../templates/dockerContainerScrip
 const createError = require('../util/error');
 const logger = require('../config/logger');
 const Hdfs = require('../util/hdfs');
+const azureEnv = require('../config/azure');
+const paiConfig = require('../config/paiConfig');
 
 class Job {
   constructor(name, namespace, next) {
@@ -49,11 +51,11 @@ class Job {
       case 'APPLICATION_CREATED':
       case 'APPLICATION_LAUNCHED':
       case 'APPLICATION_WAITING':
+      case 'APPLICATION_RETRIEVING_DIAGNOSTICS':
+      case 'APPLICATION_COMPLETED':
         jobState = 'WAITING';
         break;
       case 'APPLICATION_RUNNING':
-      case 'APPLICATION_RETRIEVING_DIAGNOSTICS':
-      case 'APPLICATION_COMPLETED':
         jobState = 'RUNNING';
         break;
       case 'FRAMEWORK_COMPLETED':
@@ -170,7 +172,7 @@ class Job {
         this._prepareJobContext(frameworkName, data, (error, result) => {
           if (error) return next(error);
           unirest.put(launcherConfig.frameworkPath(frameworkName))
-            .headers(launcherConfig.webserviceRequestHeaders(namespace))
+            .headers(launcherConfig.webserviceRequestHeaders(namespace || data.userName))
             .send(this.generateFrameworkDescription(data))
             .end((res) => {
               if (res.status === 202) {
@@ -404,6 +406,14 @@ class Job {
     for (let i = 0; i < data.taskRoles.length; i ++) {
       tasksNumber += data.taskRoles[i].taskNumber;
     }
+    let jobEnvs = [];
+    if (data.jobEnvs) {
+        for (let key in data.jobEnvs) {
+            if (data.jobEnvs.hasOwnProperty(key)) {
+                jobEnvs.push({key, value: data.jobEnvs[key]});
+            }
+        }
+    }
     const yarnContainerScript = mustache.render(
         yarnContainerScriptTemplate, {
           'idx': idx,
@@ -415,7 +425,11 @@ class Job {
           'frameworkInfoWebhdfsUri': launcherConfig.frameworkInfoWebhdfsPath(data.jobName),
           'taskData': data.taskRoles[idx],
           'jobData': data,
-          'inspectFormat': '{{.State.Pid}}',
+          'inspectPidFormat': '{{.State.Pid}}',
+          'inspectOOMKilledFormat': '{{.State.OOMKilled}}',
+          'jobEnvs': jobEnvs,
+          'azRDMA': azureEnv.azRDMA === 'false' ? false : true,
+          'reqAzRDMA': data.jobEnvs && data.jobEnvs.paiAzRDMA === true ? true : false,
         });
     return yarnContainerScript;
   }
@@ -428,6 +442,9 @@ class Job {
           'taskData': data.taskRoles[idx],
           'jobData': data,
           'webHdfsUri': launcherConfig.webhdfsUri,
+          'azRDMA': azureEnv.azRDMA === 'false' ? false : true,
+          'paiMachineList': paiConfig.machineList,
+          'reqAzRDMA': data.jobEnvs && data.jobEnvs.paiAzRDMA === true ? true : false,
         });
     return dockerContainerScript;
   }
@@ -450,6 +467,12 @@ class Job {
         'queue': virtualCluster,
         'taskNodeGpuType': gpuType,
         'gangAllocation': true,
+        'amResource': {
+          'cpuNumber': launcherConfig.amResource.cpuNumber,
+          'memoryMB': launcherConfig.amResource.memoryMB,
+          'diskType': launcherConfig.amResource.diskType,
+          'diskMB': launcherConfig.amResource.diskMB,
+        },
       },
     };
     for (let i = 0; i < data.taskRoles.length; i++) {

@@ -24,14 +24,14 @@ To run web portal, the following services should be started, and url of services
 
 For deployment
 
-1. Run `npm run yarn install` to install dependencies.
+1. Run `yarn install` to install dependencies.
 2. Run `npm run build` to bundle the JavaScript/CSS modules and generate HTML pages.
 
 ---
 
 For development
 
-1. Run `npm run yarn install` to install dependencies.
+1. Run `yarn install` to install dependencies.
 2. Run `npm run build:dev` to bundle the JavaScript/CSS modules and generate HTML pages,
    also watch the related source file, re-bundle them when file is mofified.
 3. Another `npm start` is also needed to keep the server running, see [Deployment](#deployment)
@@ -44,7 +44,7 @@ If web portal is deployed within PAI cluster, the following config field could b
 
 ---
 
-If web portal is deployed as a standalone service, the following envioronment variables must be configured:
+If web portal is deployed as a standalone service, the following environment variables must be configured:
 
 * `REST_SERVER_URI`: URI of [REST Server](../rest-server)
 * `PROMETHEUS_URI`: URI of [Prometheus](../../src/prometheus)
@@ -66,11 +66,11 @@ And the following field could be configured optionally:
 
 ## Deployment
 
-The deployment of web portal goes with the bootstrapping process of the whole PAI cluster, which is described in detail in [Tutorial: Booting up the cluster](../pai-management/doc/cluster-bootup.md).
+The deployment of web portal goes with the bootstrapping process of the whole PAI cluster, which is described in detail in [Tutorial: Booting up the cluster](../pai-management/doc/customized-configuration.md).
 
 ---
 
-If web portal is need to be deplyed as a standalone service, follow these steps:
+If web portal is need to be deployed as a standalone service, follow these steps:
 
 1. Go into the `webportal` directory.
 2. Make sure the environment variables is fully configured.
@@ -114,6 +114,15 @@ Click the tab "Cluster View" to see the status of the whole cluster. Specificall
 * Services: Status of all services of each machine.
 * Hardware: Hardware metrics of each machine.
 * K8s Dashboard: The Kubernetes Dashboard.
+
+### Virtual cluster management
+
+OpenPAI Virtual Cluster is designed to run jobs as a shared, multi-tenant cluster in an operator-friendly manner while maximizing the throughput and the utilization of the cluster. Click the tab "Virtual Cluster" to  see virtual cluster's status and change virtual clusters for user and admin respectively. Specifically (for administrators only):
+
+* Add a new virtual cluster.
+* Remove an obsolete virtual cluster.
+* Increase or decrease virtual cluster's capacity.  Virtual cluster *capacity* in percentage (%) as a float (e.g. 12.5).  Jobs in the virtual cluster may consume more resources than its capacity if there are free resources, providing elasticity. 
+* Change virtual cluster's availability. If a virtual cluster is in `STOPPED` state, new jobs cannot be submitted to *itself*. Existing jobs continue to completion, thus the virtual cluster can be *removed* gracefully. The stopped virtual cluster can also be started and change to `RUNNING` state.
 
 ### Read documents
 

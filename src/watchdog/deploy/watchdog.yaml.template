@@ -31,32 +31,31 @@ spec:
         app: watchdog
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/path: "/"
+        prometheus.io/path: "/metrics"
         prometheus.io/port: "9101"
     spec:
       containers:
       - name: watchdog
-        image: {{ clusterinfo["dockerregistryinfo"]["prefix"] }}watchdog:{{ clusterinfo["dockerregistryinfo"]["docker_tag"] }}
+        image: {{ cluster_cfg["cluster"]["docker-registry"]["prefix"] }}watchdog:{{cluster_cfg["cluster"]["docker-registry"]["tag"]}}
         imagePullPolicy: Always
         readinessProbe:
           httpGet:
-            path: /
+            path: '/healthz'
             port: 9101
-          initialDelaySeconds: 30
+          initialDelaySeconds: 3
           periodSeconds: 30
+          timeoutSeconds: 10
+        {%- if cluster_cfg['cluster']['common']['qos-switch'] == "true" %}
         resources:
           limits:
             memory: "256Mi"
+        {%- endif %}
+        env:
+        - name: LOGGING_LEVEL
+          value: INFO
         volumeMounts:
         - mountPath: /datastorage/prometheus
           name: collector-mount
-        - mountPath: /etc/watchdog
-          name: config-volume
-        {% if 'ssh-secret-name' in clusterinfo['prometheusinfo'] %}
-        - mountPath: /etc/secret-volume
-          readOnly: true
-          name: secret-volume
-        {% endif %}
         command:
           - "python"
           - "/watchdog.py"
@@ -64,21 +63,17 @@ spec:
           - "30"
           - "--port"
           - "9101"
-          - "{{ clusterinfo['webportalinfo']['k8s_api_server_uri'] }}"
+          - "--ca"
+          - "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          - "--bearer"
+          - "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          - "{{ cluster_cfg['layout']['kubernetes']['api-servers-url'] }}"
       volumes:
         - name: collector-mount
           hostPath:
-            path: {{ clusterinfo["dataPath"] }}/prometheus
-        - name: config-volume
-          configMap:
-            name: watchdog
-        {% if 'ssh-secret-name' in clusterinfo['prometheusinfo'] %}
-        - name: secret-volume
-          secret:
-            secretName: {{ clusterinfo['prometheusinfo']['ssh-secret-name'] }}
-        {% endif %}
+            path: {{ cluster_cfg["cluster"]["common"]["data-path"] }}/prometheus
       imagePullSecrets:
-      - name: {{ clusterinfo["dockerregistryinfo"]["secretname"] }}
+      - name: {{ cluster_cfg["cluster"]["docker-registry"]["secret-name"] }}
       tolerations:
       - key: node.kubernetes.io/memory-pressure
         operator: "Exists"

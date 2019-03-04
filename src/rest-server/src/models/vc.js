@@ -18,44 +18,35 @@
 
 // module dependencies
 const unirest = require('unirest');
+const xml2js = require('xml2js');
 const yarnConfig = require('../config/yarn');
 const createError = require('../util/error');
+const logger = require('../config/logger');
+
 
 class VirtualCluster {
-  constructor(name, next) {
-    this.getVcList((vcList, error) => {
-      if (error === null) {
-        if (name in vcList) {
-          for (let key of Object.keys(vcList[name])) {
-            this[key] = vcList[name][key];
-          }
-        } else {
-          error = createError('Not Found', 'NoVirtualClusterError', `Virtual cluster ${name} is not found.`);
-        }
-      }
-      next(this, error);
-    });
-  }
-
   getCapacitySchedulerInfo(queueInfo) {
     let queues = {};
+
     function traverse(queueInfo, queueDict) {
       if (queueInfo.type === 'capacitySchedulerLeafQueueInfo') {
         queueDict[queueInfo.queueName] = {
-          capacity: queueInfo.absoluteCapacity,
-          maxCapacity: queueInfo.absoluteMaxCapacity,
+          capacity: Math.round(queueInfo.absoluteCapacity),
+          maxCapacity: Math.round(queueInfo.absoluteMaxCapacity),
           usedCapacity: queueInfo.absoluteUsedCapacity,
           numActiveJobs: queueInfo.numActiveApplications,
           numJobs: queueInfo.numApplications,
           numPendingJobs: queueInfo.numPendingApplications,
           resourcesUsed: queueInfo.resourcesUsed,
+          status: queueInfo.state,
         };
       } else {
         for (let i = 0; i < queueInfo.queues.queue.length; i++) {
-            traverse(queueInfo.queues.queue[i], queueDict);
+          traverse(queueInfo.queues.queue[i], queueDict);
         }
       }
     }
+
     traverse(queueInfo, queues);
     return queues;
   }
@@ -66,7 +57,7 @@ class VirtualCluster {
       .end((res) => {
         try {
           const resJson = typeof res.body === 'object' ?
-              res.body : JSON.parse(res.body);
+            res.body : JSON.parse(res.body);
           const schedulerInfo = resJson.scheduler.schedulerInfo;
           if (schedulerInfo.type === 'capacityScheduler') {
             const vcInfo = this.getCapacitySchedulerInfo(schedulerInfo);
@@ -79,6 +70,241 @@ class VirtualCluster {
           next(null, error);
         }
       });
+  }
+
+  generateUpdateInfo(updateData) {
+    let jsonBuilder = new xml2js.Builder({rootName: 'sched-conf'});
+    let data = [];
+    for (let action of Object.keys(updateData)) {
+      if (action === 'remove-queue') {
+        for (let vcName of Object.keys(updateData[action])) {
+          data.push({[action]: 'root.' + vcName});
+        }
+      } else {
+        for (let vcName of Object.keys(updateData[action])) {
+          let singleQueue = {
+            'queue-name': 'root.' + vcName,
+            'params': {
+              'entry': [],
+            },
+          };
+          for (let paramKey of Object.keys(updateData[action][vcName])) {
+            singleQueue['params']['entry'].push({
+                'key': paramKey,
+                'value': updateData[action][vcName][paramKey],
+              },
+            );
+          }
+          data.push({[action]: singleQueue});
+        }
+      }
+    }
+
+    return jsonBuilder.buildObject(data);
+  }
+
+  sendUpdateInfo(updateXml, callback) {
+    unirest.put(yarnConfig.yarnVcUpdatePath)
+      .headers(yarnConfig.webserviceUpdateQueueHeaders)
+      .send(updateXml)
+      .end((res) => {
+        if (res.ok) {
+          return callback(null);
+        } else {
+          return callback(createError('Internal Server Error', 'UnknownError', res.body));
+        }
+      });
+  }
+
+  getVc(vcName, callback) {
+    this.getVcList((vcList, err) => {
+      if (err) {
+        return callback(err);
+      } else if (!vcList) {
+        // Unreachable
+        logger.warn('list virtual clusters error, no virtual cluster found');
+      } else if (!vcList.hasOwnProperty(vcName)) {
+        return callback(null, createError('Not Found', 'NoVirtualClusterError', `Vc ${vcName} not found`));
+      } else {
+        return callback(vcList[vcName], null);
+      }
+    });
+  }
+
+  updateVc(vcName, capacity, maxCapacity, callback) {
+    this.getVcList((vcList, err) => {
+      if (err) {
+        return callback(err);
+      } else if (!vcList) {
+        // Unreachable
+        logger.warn('list virtual clusters error, no virtual cluster found');
+      } else {
+        if (!vcList.hasOwnProperty('default')) {
+          return callback(createError('Not Found', 'NoVirtualClusterError', `No default vc found, can't allocate quota`));
+        } else {
+          let defaultQuotaIfUpdated = vcList['default']['capacity'] + (vcList[vcName] ? vcList[vcName]['capacity'] : 0) - capacity;
+          if (defaultQuotaIfUpdated < 0) {
+            return callback(createError('Forbidden', 'NoEnoughQuotaError', `No enough quota`));
+          }
+
+          let data = {'add-queue': {}, 'update-queue': {}};
+          if (vcList.hasOwnProperty(vcName)) {
+            data['update-queue'][vcName] = {
+              'capacity': capacity,
+              'maximum-capacity': maxCapacity,
+            };
+          } else {
+            data['add-queue'][vcName] = {
+              'capacity': capacity,
+              'maximum-capacity': maxCapacity,
+            };
+          }
+          data['update-queue']['default'] = {
+            'capacity': defaultQuotaIfUpdated,
+            'maximum-capacity': defaultQuotaIfUpdated,
+          };
+
+          // logger.debug('raw data to generate: ', data);
+          const vcdataXml = this.generateUpdateInfo(data);
+          // logger.debug('Xml send to yarn: ', vcdataXml);
+          this.sendUpdateInfo(vcdataXml, (err) => {
+            if (err) {
+              return callback(err);
+            } else {
+              return callback(null);
+            }
+          });
+        }
+      }
+    });
+  }
+
+  stopVc(vcName, callback) {
+    this.getVcList((vcList, err) => {
+      if (err) {
+        return callback(err);
+      } else if (!vcList) {
+        // Unreachable
+        logger.warn('list virtual clusters error, no virtual cluster found');
+      } else {
+        if (!vcList.hasOwnProperty(vcName)) {
+          return callback(createError('Not Found', 'NoVirtualClusterError', `Vc ${vcName} not found, can't stop`));
+        } else {
+          let data = {
+            'update-queue': {
+              [vcName]: {
+                'state': 'STOPPED',
+              },
+            },
+          };
+
+          // logger.debug('raw data to generate: ', data);
+          const vcdataXml = this.generateUpdateInfo(data);
+          // logger.debug('Xml send to yarn: ', vcdataXml);
+          this.sendUpdateInfo(vcdataXml, (err) => {
+            if (err) {
+              return callback(err);
+            } else {
+              return callback(null);
+            }
+          });
+        }
+      }
+    });
+  }
+
+  activeVc(vcName, callback) {
+    this.getVcList((vcList, err) => {
+      if (err) {
+        return callback(err);
+      } else if (!vcList) {
+        // Unreachable
+        logger.warn('list virtual clusters error, no virtual cluster found');
+      } else {
+        if (!vcList.hasOwnProperty(vcName)) {
+          return callback(createError('Not Found', 'NoVirtualClusterError', `Vc ${vcName} not found, can't active`));
+        } else {
+          let data = {
+            'update-queue': {
+              [vcName]: {
+                'state': 'RUNNING',
+              },
+            },
+          };
+
+          // logger.debug('raw data to generate: ', data);
+          const vcdataXml = this.generateUpdateInfo(data);
+          // logger.debug('Xml send to yarn: ', vcdataXml);
+          this.sendUpdateInfo(vcdataXml, (err) => {
+            if (err) {
+              return callback(err);
+            } else {
+              return callback(null);
+            }
+          });
+        }
+      }
+    });
+  }
+
+  removeVc(vcName, callback) {
+    this.getVcList((vcList, err) => {
+      if (err) {
+        return callback(err);
+      } else if (!vcList) {
+        // Unreachable
+        logger.warn('list virtual clusters error, no virtual cluster found');
+      } else {
+        if (!vcList.hasOwnProperty('default')) {
+          return callback(createError('Not Found', 'NoVirtualClusterError', `No default vc found, can't free quota`));
+        } else if (!vcList.hasOwnProperty(vcName)) {
+          return callback(createError('Not Found', 'NoVirtualClusterError', `Can't delete a nonexistent vc ${vcName}`));
+        } else if (vcList[vcName]['numJobs'] > 0) {
+          return callback(createError('Forbidden', 'RemoveRunningVcError',
+            `Can't delete vc ${vcName}, ${vcList[vcName]['numJobs']} jobs are running, stop them before delete vc`));
+        } else {
+          this.stopVc(vcName, (err) => {
+            if (err) {
+              return callback(err);
+            } else {
+              let defaultQuotaIfUpdated = vcList['default']['capacity'] + vcList[vcName]['capacity'];
+              let data = {
+                'update-queue': {
+                  [vcName]: {
+                    'capacity': 0,
+                    'maximum-capacity': 0,
+                  },
+                  'default': {
+                    'capacity': defaultQuotaIfUpdated,
+                    'maximum-capacity': defaultQuotaIfUpdated,
+                  },
+                },
+                'remove-queue': {
+                  [vcName]: null,
+                },
+              };
+
+              // logger.debug('Raw data to generate: ', data);
+              const vcdataXml = this.generateUpdateInfo(data);
+              // logger.debug('Xml send to yarn: ', vcdataXml);
+              this.sendUpdateInfo(vcdataXml, (err) => {
+                if (err) {
+                  this.activeVc(vcName, (errInfo) => {
+                    if (errInfo) {
+                      return callback(errInfo);
+                    } else {
+                      return callback(err);
+                    }
+                  });
+                } else {
+                  return callback(null);
+                }
+              });
+            }
+          });
+        }
+      }
+    });
   }
 }
 

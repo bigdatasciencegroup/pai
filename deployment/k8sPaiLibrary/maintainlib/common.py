@@ -96,13 +96,12 @@ def read_template(template_path):
 
 
 
-def generate_from_template(template_data, cluster_config, host_config):
+def generate_from_template(template_data, cluster_object_model, host_config):
 
     generated_file = jinja2.Template(template_data).render(
         {
             "hostcofig": host_config,
-            "clusterconfig": cluster_config['clusterinfo'],
-            "cluster": cluster_config
+            "cluster_cfg": cluster_object_model
         }
     )
 
@@ -140,6 +139,24 @@ def ipv4_address_validation(ipv4_addr):
 
 
 
+def cidr_validation(cidr):
+    str_list = cidr.split("/")
+
+    if len(str_list) != 2:
+        logger.error("{0} is not a correct CIDR.".format(cidr))
+        return False
+
+    if ipv4_address_validation(str_list[0]) is not True:
+        return False
+
+    if int(str_list[1]) > 32 or int(str_list[1]) < 0:
+        logger.error("{0} is not a correct CIDR.".format(cidr))
+        return False
+
+    return True
+
+
+
 def port_validation(port):
 
     if str(port).isdigit() == True and int(port) >= 0 and int(port) <= 65535 :
@@ -159,9 +176,15 @@ def sftp_paramiko(src, dst, filename, host_config):
     hostip = str(host_config['hostip'])
     if ipv4_address_validation(hostip) == False:
         return False
+    if 'password' not in host_config and 'keyfile-path' not in host_config:
+        logger.error("At least, you should config a password or ssh key file path for a node.")
+        logger.error("Both password and ssh key file path are missing in the node [ {0} ].".format(host_config['hostip']))
+        return False
 
     username = str(host_config['username'])
-    password = str(host_config['password'])
+    password = None
+    if 'password' in host_config:
+        password = str(host_config['password'])
     port = 22
     if 'sshport' in host_config:
         if port_validation(host_config['sshport']) == False:
@@ -179,6 +202,7 @@ def sftp_paramiko(src, dst, filename, host_config):
     ssh.connect(hostname=hostip, port=port, key_filename=key_filename, username=username, password=password)
 
     stdin, stdout, stderr = ssh.exec_command("sudo mkdir -p {0}".format(dst), get_pty=True)
+    password = password if password is not None else ''
     stdin.write(password + '\n')
     stdin.flush()
     for response_msg in stdout:
@@ -217,8 +241,15 @@ def ssh_shell_paramiko_with_result(host_config, commandline):
     hostip = str(host_config['hostip'])
     if ipv4_address_validation(hostip) == False:
         return False
+    if 'password' not in host_config and 'keyfile-path' not in host_config:
+        logger.error("At least, you should config a password or ssh key file path for a node.")
+        logger.error("Both password and ssh key file path are missing in the node [ {0} ].".format(host_config['hostip']))
+        return False
+
     username = str(host_config['username'])
-    password = str(host_config['password'])
+    password = None
+    if 'password' in host_config:
+        password = str(host_config['password'])
     port = 22
     if 'sshport' in host_config:
         if port_validation(host_config['sshport']) == False:
@@ -258,9 +289,15 @@ def ssh_shell_with_password_input_paramiko(host_config, commandline):
     hostip = str(host_config['hostip'])
     if ipv4_address_validation(hostip) == False:
         return False
+    if 'password' not in host_config and 'keyfile-path' not in host_config:
+        logger.error("At least, you should config a password or ssh key file path for a node.")
+        logger.error("Both password and ssh key file path are missing in the node [ {0} ].".format(host_config['hostip']))
+        return False
 
     username = str(host_config['username'])
-    password = str(host_config['password'])
+    password = None
+    if 'password' in host_config:
+        password = str(host_config['password'])
     port = 22
     if 'sshport' in host_config:
         if port_validation(host_config['sshport']) == False:
@@ -277,6 +314,7 @@ def ssh_shell_with_password_input_paramiko(host_config, commandline):
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     ssh.connect(hostname=hostip, port=port, key_filename=key_filename, username=username, password=password)
     stdin, stdout, stderr = ssh.exec_command(commandline, get_pty=True)
+    password = password if password is not None else ''
     stdin.write(password + '\n')
     stdin.flush()
     logger.info("Executing the command on host [{0}]: {1}".format(hostip, commandline))
@@ -336,7 +374,7 @@ def archive_tar(target, path):
 
 
 
-def maintain_package_wrapper(cluster_config, maintain_config, node_config, jobname):
+def maintain_package_wrapper(cluster_object_model, maintain_config, node_config, jobname):
 
     create_path("parcel-center/{0}/{1}".format(node_config['nodename'], jobname))
 
@@ -348,7 +386,7 @@ def maintain_package_wrapper(cluster_config, maintain_config, node_config, jobna
             dst = template_info['dst']
 
             template_data = read_template("{0}".format(src))
-            template_file = generate_from_template(template_data, cluster_config, node_config)
+            template_file = generate_from_template(template_data, cluster_object_model, node_config)
             create_path("parcel-center/{0}/{1}".format(node_config['nodename'], dst))
             write_generated_file(template_file, "parcel-center/{0}/{1}/{2}".format(node_config['nodename'], dst, name))
 
@@ -379,35 +417,35 @@ def maintain_package_cleaner(node_config):
 
 
 
-def get_etcd_leader_node(cluster_config):
-
+def get_etcd_leader_node(cluster_cfg):
+    com = cluster_cfg
     # Get leader node.
     host_list = list()
 
-    for host in cluster_config['mastermachinelist']:
-        host_list.append((cluster_config['mastermachinelist'][host]['hostip'], 4001))
+    for host in com['kubernetes']['master-list']:
+        host_list.append((com['layout']['machine-list'][host]['hostip'], 4001))
 
     client = etcd.Client(host=tuple(host_list), allow_reconnect=True)
 
     etcdid = client.leader['name']
-    for host in cluster_config['mastermachinelist']:
-        if etcdid == cluster_config['mastermachinelist'][host]['etcdid']:
-            logger.debug("Current leader of etcd-cluster: {0}".format(cluster_config['mastermachinelist'][host]))
-            return cluster_config['mastermachinelist'][host]
+    for host in com['kubernetes']['master-list']:
+        if etcdid == com['layout']['machine-list'][host]['etcdid']:
+            logger.debug("Current leader of etcd-cluster: {0}".format(com['layout']['machine-list'][host]))
+            return com['layout']['machine-list'][host]
 
     logger.error("Can't find the leader of etcd.")
     return None
 
 
 
-def get_new_etcd_peer_ip_list(cluster_config, new_node_config):
-
+def get_new_etcd_peer_ip_list(cluster_cfg, new_node_config):
+    com = cluster_cfg
     etcd_cluster_ips_peer = ""
     separated = ""
 
     host_list = list()
-    for host in cluster_config['mastermachinelist']:
-        host_list.append((cluster_config['mastermachinelist'][host]['hostip'], 4001))
+    for host in com['kubernetes']['master-list']:
+        host_list.append((com['layout']['machine-list'][host]['hostip'], 4001))
 
     client = etcd.Client(host=tuple(host_list), allow_reconnect=True)
 
